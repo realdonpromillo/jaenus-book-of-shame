@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: timeline_backend
+    ports:
+      - "5000:5000" # Map host port 5000 to container port 5000
+    environment:
+      # Use the service name 'mongo' for connection inside Docker network
+      - MONGO_URI=mongodb://mongo:27017/timeline
+      # NODE_ENV: production # Optional: Set environment
+    volumes:
+      # Mount a named volume for persistent uploads
+      - uploads_data:/app/uploads
+    depends_on:
+      mongo:
+        condition: service_healthy # Wait for mongo to be healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        # Pass the API URL accessible from the user's browser
+        # It connects to the host port mapped from the backend container
+        REACT_APP_API_URL: http://localhost:5000/api # Adjust if your backend port mapping changes
+    container_name: timeline_frontend
+    ports:
+      # Nginx runs on port 80 inside the container
+      # Map host port 3000 to container port 80
+      - "3000:80"
+    depends_on:
+      - backend # Depends on backend conceptually, but doesn't need to wait for health
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  mongo:
+    image: mongo:latest # Use a specific version in production if preferred (e.g., mongo:6.0)
+    container_name: timeline_mongo
+    ports:
+      - "27017:27017" # Expose MongoDB port to host (optional, for debugging)
+    volumes:
+      # Mount a named volume for persistent database data
+      - mongo_data:/data/db
+    healthcheck:
+      # Basic healthcheck to see if MongoDB server is responding
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s # Give mongo time to start up initially
+    restart: unless-stopped
+    networks:
+      - app-network
+
+# Define named volumes
+volumes:
+  mongo_data:
+    driver: local # Default driver
+  uploads_data:
+    driver: local
+
+# Define a network for services to communicate
+networks:
+  app-network:
+    driver: bridge
